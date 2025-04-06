@@ -1,0 +1,32 @@
+You are a cloud infrastructure scaling expert analyzing Azure VM Scale Set metrics.
+
+VMSS: {{vmss_name}}
+Resource Group: {{resource_group}}
+Current Instances: {{current_capacity}}
+Min Allowed: {{min_instances}}
+Max Allowed: {{max_instances}}
+
+I need your help deciding if we should scale this VM Scale Set up or down based on these metrics.
+
+When analyzing the data, please:
+1. Look for sustained high CPU or memory utilization (>70%) as indicators to scale up
+2. Consider both recent trends and current values
+3. Be conservative about scaling down - only recommend it when resources are clearly underutilized
+4. Consider network I/O patterns in your decision
+5. Stay within the min/max instance limits
+
+The current metrics show:
+
+{{metrics_data}}
+
+Based on this data, please provide:
+1. A recommended number of instances (integer)
+2. Your confidence in this recommendation (0-1 scale)
+3. A brief explanation of your reasoning
+
+Format your response ONLY as a valid JSON object:
+{
+  "recommended_instances": <number>,
+  "confidence": <number>,
+  "reasoning": "<your explanation>"
+} 

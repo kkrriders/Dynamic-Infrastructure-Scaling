@@ -1,0 +1,49 @@
+{
+  "name": "dynamic-infrastructure-scaling",
+  "version": "1.1.0",
+  "description": "AI-driven infrastructure scaling solution using Ollama models with confidence scoring and fallback mechanisms",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "fetch-metrics": "node scripts/fetch-metrics.js",
+    "schedule-scaling": "node scripts/schedule-scaling.js",
+    "scaling:llama3-8b": "node scripts/schedule-scaling.js --model=llama3:8b",
+    "scaling:llama3-8b:prompt": "node scripts/schedule-scaling.js --model=llama3:8b --prompt-file=config/llama3-8b-prompt.txt",
+    "scaling:dry-run": "node scripts/schedule-scaling.js --dry-run",
+    "scaling:debug": "node scripts/schedule-scaling.js --dry-run --model=llama3:8b --confidence-threshold=0.5",
+    "list-models": "node scripts/schedule-scaling.js --list-models",
+    "test": "jest"
+  },
+  "keywords": [
+    "azure",
+    "infrastructure",
+    "scaling",
+    "ai",
+    "ollama",
+    "llm"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@azure/arm-compute": "^18.0.0",
+    "@azure/arm-monitor": "^7.0.0",
+    "@azure/identity": "^3.3.0",
+    "@azure/storage-blob": "^12.16.0",
+    "axios": "^1.4.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "joi": "^17.9.2",
+    "morgan": "^1.10.0",
+    "winston": "^3.10.0"
+  },
+  "devDependencies": {
+    "jest": "^29.6.2",
+    "nodemon": "^3.0.1",
+    "supertest": "^6.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
