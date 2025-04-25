@@ -12,6 +12,9 @@
     "scaling:llama3-8b:prompt": "node scripts/schedule-scaling.js --model=llama3:8b --prompt-file=config/llama3-8b-prompt.txt",
     "scaling:dry-run": "node scripts/schedule-scaling.js --dry-run",
     "scaling:debug": "node scripts/schedule-scaling.js --dry-run --model=llama3:8b --confidence-threshold=0.5",
+    "monitor": "node scripts/monitor-scaling.js",
+    "monitor:test": "node scripts/monitor-scaling.js --test-ollama",
+    "monitor:continuous": "node scripts/monitor-scaling.js --continuous --interval=300",
     "list-models": "node scripts/schedule-scaling.js --list-models",
     "test": "jest"
   },

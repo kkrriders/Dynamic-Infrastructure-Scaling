@@ -147,6 +147,149 @@ function validateEnvironment() {
 }
 
 /**
+ * Get total memory in bytes for a given VM size
+ * @param {string} vmSize - Azure VM size (e.g., 'Standard_D2s_v3')
+ * @returns {number} - Total memory in bytes
+ */
+function getTotalMemory(vmSize) {
+  // Enhanced VM size to memory mapping with more sizes
+  const vmSizeToMemoryGB = {
+    // General purpose
+    'Standard_B1s': 1,
+    'Standard_B1ms': 2,
+    'Standard_B2s': 4,
+    'Standard_B2ms': 8,
+    'Standard_B4ms': 16,
+    'Standard_B8ms': 32,
+    'Standard_B12ms': 48,
+    'Standard_B16ms': 64,
+    'Standard_B20ms': 80,
+    // D-series
+    'Standard_D2s_v3': 8,
+    'Standard_D4s_v3': 16,
+    'Standard_D8s_v3': 32,
+    'Standard_D16s_v3': 64,
+    'Standard_D32s_v3': 128,
+    'Standard_D48s_v3': 192,
+    'Standard_D64s_v3': 256,
+    // E-series (memory optimized)
+    'Standard_E2s_v3': 16,
+    'Standard_E4s_v3': 32,
+    'Standard_E8s_v3': 64,
+    'Standard_E16s_v3': 128,
+    'Standard_E20s_v3': 160,
+    'Standard_E32s_v3': 256,
+    'Standard_E48s_v3': 384,
+    'Standard_E64s_v3': 432,
+    // F-series (compute optimized)
+    'Standard_F2s_v2': 4,
+    'Standard_F4s_v2': 8,
+    'Standard_F8s_v2': 16,
+    'Standard_F16s_v2': 32,
+    'Standard_F32s_v2': 64,
+    'Standard_F48s_v2': 96,
+    'Standard_F64s_v2': 128,
+    // Fallback defaults by family
+    'Standard_D': 8,  // Default for D-series
+    'Standard_E': 16, // Default for E-series
+    'Standard_F': 4,  // Default for F-series
+    'Standard_B': 4   // Default for B-series
+  };
+  
+  if (!vmSize) {
+    logger.warn('VM size not provided, using default memory size of 8 GB');
+    return 8 * 1024 * 1024 * 1024; // Default 8 GB in bytes
+  }
+  
+  // Try exact match first
+  if (vmSizeToMemoryGB[vmSize]) {
+    return vmSizeToMemoryGB[vmSize] * 1024 * 1024 * 1024; // Convert GB to bytes
+  }
+  
+  // Try to match by family
+  for (const prefix of ['Standard_D', 'Standard_E', 'Standard_F', 'Standard_B']) {
+    if (vmSize.startsWith(prefix)) {
+      logger.info(`VM size ${vmSize} not in lookup table, using family default of ${vmSizeToMemoryGB[prefix]} GB`);
+      return vmSizeToMemoryGB[prefix] * 1024 * 1024 * 1024;
+    }
+  }
+  
+  // Fallback default
+  logger.warn(`Unknown VM size: ${vmSize}, using default memory size of 8 GB`);
+  return 8 * 1024 * 1024 * 1024; // Default 8 GB in bytes
+}
+
+/**
+ * Normalize and enhance memory metrics
+ * @param {Object} memoryAvailableBytes - Raw memory metrics
+ * @param {number} totalMemoryBytes - Total VM memory in bytes
+ * @returns {Object} - Enhanced memory metrics
+ */
+function enhanceMemoryMetrics(memoryAvailableBytes, totalMemoryBytes) {
+  if (!memoryAvailableBytes || memoryAvailableBytes.error) {
+    return {
+      error: memoryAvailableBytes?.error || 'Invalid memory metrics'
+    };
+  }
+  
+  const result = {
+    unit: 'Percent',
+    current: null,
+    history: [],
+    trend: 'stable'
+  };
+  
+  // Process current value
+  if (memoryAvailableBytes.current) {
+    const availableBytes = memoryAvailableBytes.current.value;
+    const usedPercentage = Math.max(0, Math.min(100, 100 - (availableBytes / totalMemoryBytes * 100)));
+    result.current = {
+      timestamp: memoryAvailableBytes.current.timestamp,
+      value: usedPercentage
+    };
+  }
+  
+  // Process historical values
+  if (memoryAvailableBytes.history && memoryAvailableBytes.history.length > 0) {
+    for (const point of memoryAvailableBytes.history) {
+      const availableBytes = point.value;
+      const usedPercentage = Math.max(0, Math.min(100, 100 - (availableBytes / totalMemoryBytes * 100)));
+      result.history.push({
+        timestamp: point.timestamp,
+        value: usedPercentage
+      });
+    }
+    
+    // Calculate trend if we have enough data
+    if (result.history.length >= 2) {
+      const values = result.history.map(point => point.value);
+      
+      // Calculate trend as percent change from first half to second half
+      const halfPoint = Math.floor(values.length / 2);
+      const firstHalf = values.slice(0, halfPoint);
+      const secondHalf = values.slice(halfPoint);
+      
+      const firstAvg = firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length;
+      const secondAvg = secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length;
+      
+      if (firstAvg > 0) {
+        const changePercent = ((secondAvg - firstAvg) / firstAvg) * 100;
+        
+        if (changePercent > 10) {
+          result.trend = 'increasing';
+        } else if (changePercent < -10) {
+          result.trend = 'decreasing';
+        } else {
+          result.trend = 'stable';
+        }
+      }
+    }
+  }
+  
+  return result;
+}
+
+/**
  * Fetch recent metrics from Azure Monitor
  */
 async function fetchMetrics(monitorClient, resourceId, vmSize) {
@@ -204,33 +347,13 @@ async function fetchMetrics(monitorClient, resourceId, vmSize) {
     try {
       const totalMemoryBytes = getTotalMemory(vmSize);
       if (totalMemoryBytes > 0) {
-        processedMetrics.memoryUsedPercentage = {
-          unit: 'Percent',
-          current: null,
-          history: []
-        };
+        // Enhanced memory metrics calculation with trend analysis
+        processedMetrics.memoryUsedPercentage = enhanceMemoryMetrics(
+          processedMetrics.memoryAvailableBytes, 
+          totalMemoryBytes
+        );
         
-        // Convert current value
-        if (processedMetrics.memoryAvailableBytes.current) {
-          const availableBytes = processedMetrics.memoryAvailableBytes.current.value;
-          const usedPercentage = Math.max(0, Math.min(100, 100 - (availableBytes / totalMemoryBytes * 100)));
-          processedMetrics.memoryUsedPercentage.current = {
-            timestamp: processedMetrics.memoryAvailableBytes.current.timestamp,
-            value: usedPercentage
-          };
-        }
-        
-        // Convert historical values
-        for (const point of processedMetrics.memoryAvailableBytes.history) {
-          const availableBytes = point.value;
-          const usedPercentage = Math.max(0, Math.min(100, 100 - (availableBytes / totalMemoryBytes * 100)));
-          processedMetrics.memoryUsedPercentage.history.push({
-            timestamp: point.timestamp,
-            value: usedPercentage
-          });
-        }
-        
-        logger.debug('Calculated memory usage percentage');
+        logger.debug('Calculated memory usage percentage with trend analysis');
       }
     } catch (error) {
       logger.warn(`Error calculating memory usage percentage: ${error.message}`);
@@ -296,42 +419,6 @@ function processMetricResponse(metrics, metricDef) {
     logger.warn(`Error processing metric response for ${metricDef.name}: ${error.message}`);
     result.error = error.message;
     return result;
-  }
-}
-
-/**
- * Get total memory for the VM size (simplified)
- */
-function getTotalMemory(vmSize) {
-  try {
-    if (!vmSize) {
-      logger.warn('VM size not provided or found, cannot accurately calculate memory percentage. Assuming 8GiB.');
-      return 8 * 1024 * 1024 * 1024;
-    }
-    
-    // Simplified map - add more sizes as needed
-    const vmSizeMemory = {
-      'standard_d2s_v3': 8 * 1024 * 1024 * 1024,
-      'standard_d4s_v3': 16 * 1024 * 1024 * 1024,
-      'standard_d8s_v3': 32 * 1024 * 1024 * 1024,
-      'standard_d16s_v3': 64 * 1024 * 1024 * 1024,
-      'standard_ds1_v2': 3.5 * 1024 * 1024 * 1024,
-      'standard_ds2_v2': 7 * 1024 * 1024 * 1024,
-      'standard_f2s_v2': 4 * 1024 * 1024 * 1024,
-      'standard_f4s_v2': 8 * 1024 * 1024 * 1024,
-    };
-    
-    const memory = vmSizeMemory[vmSize.toLowerCase()];
-    
-    if (!memory) {
-      logger.warn(`Unknown VM size: ${vmSize}. Cannot determine memory. Assuming 8GiB.`);
-      return 8 * 1024 * 1024 * 1024;
-    }
-    
-    return memory;
-  } catch (error) {
-    logger.warn(`Error determining VM memory: ${error.message}`);
-    return 8 * 1024 * 1024 * 1024; // Default to 8GiB
   }
 }
 

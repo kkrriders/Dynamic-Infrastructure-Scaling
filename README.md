@@ -16,6 +16,9 @@ This project provides an intelligent scaling solution for Azure Virtual Machine 
 - Robust execution of scaling actions on Azure VMSS
 - Command-line tool support for metrics collection and scaling checks
 - API Server for monitoring and potential manual control (optional)
+- Resilient API communication with automatic retries and exponential backoff
+- Enhanced memory utilization analysis with VM size auto-detection
+- Trend analysis for key metrics to improve scaling decisions
 
 ## Architecture
 
@@ -58,6 +61,22 @@ node scripts/schedule-scaling.js
 ```
 
 The fallback model has been set to mistral:7b, which provides a good balance of efficiency and reasoning capability if the primary model fails.
+
+## Recent Enhancements
+
+### Reliability Improvements
+- **Retry Mechanism**: Added configurable retry logic with exponential backoff for Ollama API calls
+- **Error Handling**: Improved error handling for JSON parsing, missing data, and network failures
+- **Validation**: Enhanced validation of model responses to ensure correct format before processing
+
+### Metric Analysis Improvements
+- **Trend Detection**: Added safer trend calculation to prevent division by zero errors
+- **VM Size Detection**: Enhanced VM size to memory mapping for better memory utilization calculations
+- **Empty Data Handling**: Graceful handling of missing or insufficient metric data
+
+### Performance Optimization
+- **JSON Parsing**: Trimming response text before parsing to prevent syntax errors
+- **Model Configuration**: Fine-tuned settings for Llama3:8b including stop sequences and context window
 
 ## Prerequisites
 

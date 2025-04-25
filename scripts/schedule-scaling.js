@@ -223,51 +223,40 @@ async function getCurrentVmssState(computeClient) {
 }
 
 /**
- * Load the latest metrics data from local storage
+ * Calculate trend safely from an array of values
+ * @param {Array<number>} values - Array of metric values
+ * @returns {string} - 'increasing', 'decreasing', or 'stable'
  */
-async function loadLatestMetrics() {
-  try {
-    if (!fs.existsSync(METRICS_PATH)) {
-      logger.warn(`Metrics directory does not exist: ${METRICS_PATH}. Cannot load metrics.`);
-      return null;
-    }
-    
-    const metricsFiles = fs.readdirSync(METRICS_PATH)
-      .filter(file => file.startsWith('metrics_') && file.endsWith('.json'))
-      .sort(); // Sorts chronologically assuming filename format
-    
-    if (metricsFiles.length === 0) {
-      logger.warn(`No metrics files found in ${METRICS_PATH}`);
-      return null;
-    }
-    
-    // Get the latest metrics file
-    const latestFile = metricsFiles[metricsFiles.length - 1];
-    const filePath = path.join(METRICS_PATH, latestFile);
-    
-    logger.info(`Loading latest metrics from: ${latestFile}`);
-    
-    const fileContent = fs.readFileSync(filePath, 'utf8');
-    const metricsData = JSON.parse(fileContent);
-    
-    // Basic validation
-    if (!metricsData || !metricsData.timestamp || !metricsData.metrics) {
-      throw new Error(`Invalid format in metrics file: ${latestFile}`);
-    }
-    
-    // Check freshness (warn if older than 2 * interval)
-    const fileTimestamp = new Date(metricsData.timestamp);
-    const maxAgeMinutes = (process.env.METRICS_INTERVAL_MIN || 15) * 2;
-    if ((Date.now() - fileTimestamp.getTime()) > maxAgeMinutes * 60 * 1000) {
-      logger.warn(`Metrics data is older than ${maxAgeMinutes} minutes.`);
-    }
-    
-    return metricsData;
-    
-  } catch (error) {
-    logger.error(`Failed to load or parse latest metrics file: ${error.message}`);
-    return null; // Return null instead of throwing to allow potential recovery or logging
+function calculateTrend(values) {
+  if (!values || values.length < 2) {
+    return 'stable'; // Not enough data to determine trend
   }
+  
+  const halfIndex = Math.floor(values.length / 2);
+  if (halfIndex === 0) {
+    return 'stable'; // Not enough data to split
+  }
+  
+  const firstHalf = values.slice(0, halfIndex);
+  const secondHalf = values.slice(halfIndex);
+  
+  const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+  const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+  
+  // Check for division by zero
+  if (firstAvg === 0 || isNaN(firstAvg)) {
+    // Compare absolute values instead
+    if (secondAvg > 0) return 'increasing';
+    if (secondAvg < 0) return 'decreasing';
+    return 'stable';
+  }
+  
+  const trendPercentage = ((secondAvg - firstAvg) / Math.abs(firstAvg) * 100);
+  
+  if (isNaN(trendPercentage)) return 'stable';
+  
+  return trendPercentage > 5 ? 'increasing' : 
+         trendPercentage < -5 ? 'decreasing' : 'stable';
 }
 
 /**
@@ -288,6 +277,7 @@ function constructOllamaPrompt(vmss, metricsData) {
         .replace('{{max_instances}}', MAX_INSTANCES);
     } catch (error) {
       logger.error(`Error loading custom prompt template: ${error.message}. Using default prompt.`);
+      // Continue to default prompt construction below
     }
   }
   
@@ -305,44 +295,30 @@ function constructOllamaPrompt(vmss, metricsData) {
     // Process CPU metrics
     if (metricsData.metrics.cpuPercentage && !metricsData.metrics.cpuPercentage.error) {
       const cpuData = metricsData.metrics.cpuPercentage;
-      if (cpuData.current && cpuData.history.length > 0) {
+      if (cpuData.current && cpuData.history && cpuData.history.length > 0) {
         cpuCurrent = cpuData.current.value.toFixed(2) + '%';
         
         // Calculate average
         const cpuValues = cpuData.history.map(p => p.value);
         cpuAverage = (cpuValues.reduce((a, b) => a + b, 0) / cpuValues.length).toFixed(2) + '%';
         
-        // Determine trend
-        const firstHalf = cpuValues.slice(0, Math.floor(cpuValues.length / 2));
-        const secondHalf = cpuValues.slice(Math.floor(cpuValues.length / 2));
-        const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
-        const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
-        
-        const trendPercentage = ((secondAvg - firstAvg) / firstAvg * 100).toFixed(1);
-        cpuTrend = trendPercentage > 5 ? 'increasing' : 
-                   trendPercentage < -5 ? 'decreasing' : 'stable';
+        // Determine trend using safer function
+        cpuTrend = calculateTrend(cpuValues);
       }
     }
     
     // Process Memory metrics (prefer percentage if available)
     const memMetric = metricsData.metrics.memoryUsedPercentage || metricsData.metrics.memoryAvailableBytes;
     if (memMetric && !memMetric.error) {
-      if (memMetric.current && memMetric.history.length > 0) {
+      if (memMetric.current && memMetric.history && memMetric.history.length > 0) {
         memCurrent = memMetric.current.value.toFixed(2) + '%';
         
         // Calculate average
         const memValues = memMetric.history.map(p => p.value);
         memAverage = (memValues.reduce((a, b) => a + b, 0) / memValues.length).toFixed(2) + '%';
         
-        // Determine trend
-        const firstHalf = memValues.slice(0, Math.floor(memValues.length / 2));
-        const secondHalf = memValues.slice(Math.floor(memValues.length / 2));
-        const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
-        const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
-        
-        const trendPercentage = ((secondAvg - firstAvg) / firstAvg * 100).toFixed(1);
-        memTrend = trendPercentage > 5 ? 'increasing' : 
-                   trendPercentage < -5 ? 'decreasing' : 'stable';
+        // Determine trend using safer function
+        memTrend = calculateTrend(memValues);
       }
     }
     
@@ -510,6 +486,68 @@ async function displayAvailableModels() {
   }
   
   console.log('\nTo use a specific model, run with --model=MODEL_NAME');
+}
+
+/**
+ * Load the latest metrics data from local storage
+ */
+async function loadLatestMetrics() {
+  try {
+    if (!fs.existsSync(METRICS_PATH)) {
+      logger.warn(`Metrics directory does not exist: ${METRICS_PATH}. Cannot load metrics.`);
+      return null;
+    }
+    
+    const metricsFiles = fs.readdirSync(METRICS_PATH)
+      .filter(file => file.startsWith('metrics_') && file.endsWith('.json'))
+      .sort(); // Sorts chronologically assuming filename format
+    
+    if (metricsFiles.length === 0) {
+      logger.warn(`No metrics files found in ${METRICS_PATH}`);
+      return null;
+    }
+    
+    // Get the latest metrics file
+    const latestFile = metricsFiles[metricsFiles.length - 1];
+    const filePath = path.join(METRICS_PATH, latestFile);
+    
+    logger.info(`Loading latest metrics from: ${latestFile}`);
+    
+    let fileContent;
+    try {
+      fileContent = fs.readFileSync(filePath, 'utf8');
+    } catch (readError) {
+      logger.error(`Error reading metrics file ${latestFile}: ${readError.message}`);
+      return null;
+    }
+    
+    let metricsData;
+    try {
+      metricsData = JSON.parse(fileContent);
+    } catch (parseError) {
+      logger.error(`Error parsing JSON in metrics file ${latestFile}: ${parseError.message}`);
+      return null;
+    }
+    
+    // Basic validation
+    if (!metricsData || !metricsData.timestamp || !metricsData.metrics) {
+      logger.error(`Invalid format in metrics file: ${latestFile}. Missing required fields.`);
+      return null;
+    }
+    
+    // Check freshness (warn if older than 2 * interval)
+    const fileTimestamp = new Date(metricsData.timestamp);
+    const maxAgeMinutes = (process.env.METRICS_INTERVAL_MIN || 15) * 2;
+    if ((Date.now() - fileTimestamp.getTime()) > maxAgeMinutes * 60 * 1000) {
+      logger.warn(`Metrics data is older than ${maxAgeMinutes} minutes.`);
+    }
+    
+    return metricsData;
+    
+  } catch (error) {
+    logger.error(`Failed to load metrics: ${error.message}`);
+    return null;
+  }
 }
 
 // Display usage information

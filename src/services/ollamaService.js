@@ -4,10 +4,12 @@ const axios = require('axios');
 const logger = require('../utils/logger');
 
 // Default configuration
-const OLLAMA_API_URL = process.env.OLLAMA_API_URL || 'http://localnphost:11434';
+const OLLAMA_API_URL = process.env.OLLAMA_API_URL || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3:8b'; // Changed default to llama3:8b
 const OLLAMA_FALLBACK_MODEL = process.env.OLLAMA_FALLBACK_MODEL || 'mistral:7b'; // Changed fallback to mistral:7b
 const OLLAMA_REQUEST_TIMEOUT = parseInt(process.env.OLLAMA_REQUEST_TIMEOUT || '120000'); // Increased timeout for larger models
+const OLLAMA_RETRY_COUNT = parseInt(process.env.OLLAMA_RETRY_COUNT || '3'); // Number of retries for API calls
+const OLLAMA_RETRY_DELAY = parseInt(process.env.OLLAMA_RETRY_DELAY || '1000'); // Delay between retries in ms
 
 // Default system prompt optimized for cloud resource prediction
 const DEFAULT_SYSTEM_PROMPT = process.env.OLLAMA_SYSTEM_PROMPT || 
@@ -68,6 +70,74 @@ const CLOUD_RESOURCE_MODELS = {
 };
 
 /**
+ * Validate the recommendation JSON for required fields and correct types
+ * @param {Object} recommendation - The parsed JSON recommendation
+ * @returns {boolean} - True if valid, false otherwise
+ */
+function validateRecommendation(recommendation) {
+  if (!recommendation || typeof recommendation !== 'object') {
+    return false;
+  }
+
+  // Check required fields
+  if (typeof recommendation.recommended_instances !== 'number') {
+    return false;
+  }
+
+  // Ensure recommended_instances is a positive integer
+  if (isNaN(recommendation.recommended_instances) || 
+      recommendation.recommended_instances < 1 || 
+      !Number.isInteger(recommendation.recommended_instances)) {
+    return false;
+  }
+
+  // Check confidence is a number between 0-1 if provided
+  if (recommendation.confidence !== undefined) {
+    if (typeof recommendation.confidence !== 'number' || 
+        recommendation.confidence < 0 || 
+        recommendation.confidence > 1) {
+      return false;
+    }
+  }
+
+  // Reasoning should be a string if provided
+  if (recommendation.reasoning !== undefined && 
+      typeof recommendation.reasoning !== 'string') {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Make API call with retry logic
+ * @param {string} url - The API endpoint URL
+ * @param {Object} payload - The request payload
+ * @param {Object} options - Request options (headers, timeout)
+ * @returns {Promise<Object>} - API response
+ */
+async function makeApiCallWithRetry(url, payload, options) {
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= OLLAMA_RETRY_COUNT; attempt++) {
+    try {
+      return await axios.post(url, payload, options);
+    } catch (error) {
+      lastError = error;
+      
+      if (attempt < OLLAMA_RETRY_COUNT) {
+        const delay = OLLAMA_RETRY_DELAY * attempt; // Exponential backoff
+        logger.warn(`API call failed (attempt ${attempt}/${OLLAMA_RETRY_COUNT}). Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  // All retries failed
+  throw lastError;
+}
+
+/**
  * Get scaling recommendation from Ollama based on provided context
  * @param {string} prompt - The user prompt detailing the current state and metrics
  * @param {string} [systemPrompt=DEFAULT_SYSTEM_PROMPT] - The system prompt to guide the model
@@ -98,6 +168,9 @@ async function getScalingRecommendation(prompt, systemPrompt = DEFAULT_SYSTEM_PR
     options: {
       temperature: modelConfig.temperature,
       num_predict: modelConfig.num_predict,
+      // Include additional parameters if they exist in the model config
+      ...(modelConfig.stop && { stop: modelConfig.stop }),
+      ...(modelConfig.num_ctx && { num_ctx: modelConfig.num_ctx })
     }
   };
 
@@ -105,10 +178,13 @@ async function getScalingRecommendation(prompt, systemPrompt = DEFAULT_SYSTEM_PR
   logger.debug('Ollama request payload:', { payload: { ...payload, prompt: '<prompt content hidden>' } });
 
   try {
-    const response = await axios.post(url, payload, {
+    const options = {
       timeout: OLLAMA_REQUEST_TIMEOUT,
       headers: { 'Content-Type': 'application/json' }
-    });
+    };
+    
+    // Use retry mechanism
+    const response = await makeApiCallWithRetry(url, payload, options);
 
     if (response.data && response.data.response) {
       logger.info('Received response from Ollama API');
@@ -116,11 +192,11 @@ async function getScalingRecommendation(prompt, systemPrompt = DEFAULT_SYSTEM_PR
 
       try {
         // Parse the JSON string within the response field
-        const recommendation = JSON.parse(response.data.response);
+        const recommendation = JSON.parse(response.data.response.trim());
         
-        // Validate response has the expected fields
-        if (typeof recommendation.recommended_instances !== 'number') {
-          throw new Error('Response missing required "recommended_instances" field or not a number');
+        // Validate recommendation format
+        if (!validateRecommendation(recommendation)) {
+          throw new Error('Invalid recommendation format or missing required fields');
         }
         
         return recommendation;
