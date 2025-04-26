@@ -16,6 +16,7 @@ let monitoringService, dataCollectionService, modelService, infrastructureServic
 const predictionRoutes = require('./api/predictionRoutes');
 const insightsRoutes = require('./api/insightsRoutes');
 const infrastructureRoutes = require('./api/infrastructureRoutes');
+const metricsRoutes = require('./api/metricsRoutes');
 
 // Initialize Express app
 const app = express();
@@ -58,6 +59,7 @@ try {
 app.use('/api/predictions', predictionRoutes);
 app.use('/api/insights', insightsRoutes);
 app.use('/api/infrastructure', infrastructureRoutes);
+app.use('/metrics', metricsRoutes);
 
 // Global error handler
 app.use(errorHandler);
@@ -71,6 +73,14 @@ app.use((req, res) => {
 async function initializeServices() {
   try {
     logger.info('Initializing services...');
+    
+    // Initialize metrics with resource group and VMSS name
+    const metrics = require('./utils/metrics');
+    metrics.initializeMetrics(
+      process.env.AZURE_RESOURCE_GROUP,
+      process.env.AZURE_VMSS_NAME
+    );
+    logger.info('Metrics initialized');
     
     // Initialize Azure monitoring
     await monitoringService.initializeMonitoring();

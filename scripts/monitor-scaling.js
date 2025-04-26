@@ -20,7 +20,8 @@ const argOptions = {
   dryRun: args.includes('--dry-run') || true, // Default to dry run for safety
   continuous: args.includes('--continuous'),
   interval: args.find(arg => arg.startsWith('--interval='))?.split('=')[1] || '300', // Default 5 minutes
-  model: args.find(arg => arg.startsWith('--model='))?.split('=')[1] || process.env.OLLAMA_MODEL || 'llama3:8b'
+  model: args.find(arg => arg.startsWith('--model='))?.split('=')[1] || process.env.OLLAMA_MODEL || 'llama3:8b',
+  cloud: args.find(arg => arg.startsWith('--cloud='))?.split('=')[1] || process.env.CLOUD_PROVIDER || 'azure'
 };
 
 /**
@@ -37,7 +38,7 @@ async function main() {
     
     if (argOptions.testOllama) {
       // Run a simple test prompt with Ollama
-      await testOllamaModel(argOptions.model);
+      await testOllamaModel(argOptions.model, argOptions.cloud);
       return;
     }
     
@@ -115,10 +116,13 @@ async function checkOllamaStatus() {
 /**
  * Test the Ollama model with a simple prompt
  */
-async function testOllamaModel(modelName) {
-  console.log(`\nTesting ${modelName} with a simple scaling prompt...`);
+async function testOllamaModel(modelName, cloudProvider = 'azure') {
+  console.log(`\nTesting ${modelName} with a simple scaling prompt for ${cloudProvider}...`);
   
-  const testPrompt = `
+  let testPrompt;
+  
+  if (cloudProvider.toLowerCase() === 'azure') {
+    testPrompt = `
 I need to decide how many VM instances to provision in our Azure VM Scale Set.
 Current metrics:
 - CPU Usage: 78% (increasing trend)
@@ -130,7 +134,22 @@ Current metrics:
 - Max allowed: 10
 
 What would be the optimal number of VM instances? Respond with a JSON object containing 'recommended_instances', 'confidence', and 'reasoning'.
-  `;
+    `;
+  } else if (cloudProvider.toLowerCase() === 'gcp') {
+    testPrompt = `
+I need to decide how many VM instances to provision in our Google Cloud Platform Instance Group.
+Current metrics:
+- CPU Usage: 78% (increasing trend)
+- Memory Usage: 65% (stable)
+- Network In: 250 MB
+- Network Out: 120 MB
+- Current instances: 3
+- Min allowed: 2
+- Max allowed: 10
+
+What would be the optimal number of VM instances? Respond with a JSON object containing 'recommended_instances', 'confidence', and 'reasoning'.
+    `;
+  }
   
   try {
     console.log('\nSending test prompt to Ollama...');
@@ -169,16 +188,22 @@ async function runScalingCycle() {
     fs.mkdirSync(dataDir, { recursive: true });
   }
   
+  // Determine file pattern based on cloud provider
+  const filePattern = argOptions.cloud.toLowerCase() === 'azure'
+    ? /^metrics_.*\.json$/
+    : /^gcp_metrics_.*\.json$/;
+  
   // Run fetch-metrics script if needed or requested
   const metricsFiles = fs.readdirSync(dataDir)
-    .filter(file => file.startsWith('metrics_') && file.endsWith('.json'))
+    .filter(file => filePattern.test(file))
     .sort();
   
   if (metricsFiles.length === 0 || argOptions.fetchOnly) {
     console.log('\nFetching latest metrics...');
     try {
-      // This will require Azure credentials to be set up
-      execSync('node scripts/fetch-metrics.js', { stdio: 'inherit' });
+      // This will require Azure or GCP credentials to be set up
+      const cloudOption = `--cloud=${argOptions.cloud}`;
+      execSync(`node scripts/fetch-metrics.js ${cloudOption}`, { stdio: 'inherit' });
       console.log('✅ Metrics fetched successfully');
     } catch (error) {
       console.error(`❌ Error fetching metrics: ${error.message}`);
@@ -197,7 +222,7 @@ async function runScalingCycle() {
   
   // Run the scaling script with dry-run flag for safety
   console.log('\nRunning scaling check (dry-run mode)...');
-  let scalingFlags = ['--dry-run', `--model=${argOptions.model}`];
+  let scalingFlags = ['--dry-run', `--model=${argOptions.model}`, `--cloud=${argOptions.cloud}`];
   
   try {
     execSync(`node scripts/schedule-scaling.js ${scalingFlags.join(' ')}`, { stdio: 'inherit' });
@@ -248,11 +273,25 @@ Options:
   --dry-run              Don't apply actual scaling changes (default)
   --continuous           Run in continuous monitoring mode
   --interval=SECONDS     Interval for continuous mode (default: 300)
-  --model=NAME           Ollama model to use (default: from .env)
-  --help, -h             Show this help message
+  --model=NAME           Ollama model to use (default: ${argOptions.model})
+  --cloud=PROVIDER       Cloud provider to use (azure, gcp) (default: ${argOptions.cloud})
+  --help, -h             Show this help
+
+Examples:
+  # Test if Ollama is working
+  node monitor-scaling.js --test-ollama
+  
+  # Monitor Azure infrastructure
+  node monitor-scaling.js --cloud=azure --continuous
+  
+  # Monitor GCP infrastructure
+  node monitor-scaling.js --cloud=gcp --continuous
   `);
   process.exit(0);
 }
 
 // Run the script
-main(); 
+main().catch(error => {
+  console.error(`An error occurred: ${error.message}`);
+  process.exit(1);
+}); 

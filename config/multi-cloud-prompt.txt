@@ -1,0 +1,49 @@
+I need to decide how many VM instances to provision in our {{cloud_provider}} environment.
+
+CURRENT STATE:
+{{#if cloud_provider == 'Azure'}}
+- VMSS Name: {{vmss_name}}
+- Resource Group: {{resource_group}}
+- Current instance count: {{current_capacity}}
+- Min allowed instances: {{min_instances}}
+- Max allowed instances: {{max_instances}}
+{{/if}}
+{{#if cloud_provider == 'GCP'}}
+- Instance Group: {{instance_group}}
+- Project: {{project}}
+- Zone: us-central1-a
+- Current instance count: {{current_capacity}}
+- Min allowed instances: {{min_instances}}
+- Max allowed instances: {{max_instances}}
+{{/if}}
+
+RECENT METRICS:
+The detailed metrics data is provided below. This includes CPU utilization, memory usage, and network traffic.
+
+KEY METRICS SUMMARY:
+{{metrics_data}}
+
+SCALING CONSIDERATIONS:
+1. Scale up if:
+   - CPU utilization consistently above 75%
+   - Memory usage consistently above 80%
+   - Network traffic showing sustained high load
+
+2. Scale down if:
+   - Both CPU and memory utilization below 40% for extended periods
+   - No significant spikes in traffic expected
+   - Current capacity clearly exceeds demand
+
+3. Constraints:
+   - Must stay within limits: {{min_instances}} minimum and {{max_instances}} maximum instances
+   - Be more cautious about scaling down than scaling up
+   - Consider time-of-day patterns if evident in the data
+
+Based on your expert analysis of these metrics, what should our new instance count be? 
+
+Please respond with a JSON object containing:
+{
+  "recommended_instances": <integer>,
+  "confidence": <number between 0-1>,
+  "reasoning": "<brief explanation of your recommendation>"
+} 

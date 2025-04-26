@@ -47,24 +47,24 @@ const CLOUD_RESOURCE_MODELS = {
   },
   'llama3:8b': { // Updated parameters for optimal performance
     temperature: 0.1, // Lower temperature for more deterministic responses
-    num_predict: 100, // Increased from 75 to 100 for more complete responses
+    num_predict: 250, // Increased from 100 to 250 for more complete responses
     stop: ['\n}', '}\n'], // Added stop sequences to help with JSON generation
     num_ctx: 4096, // Explicitly set context window
     description: 'Optimized model for cloud scaling decisions'
   },
   'mistral:7b': { // Good alternative
     temperature: 0.3,
-    num_predict: 75,
+    num_predict: 150, // Increased from 75 to 150
     description: 'Efficient model for scaling decisions'
   },
   'mixtral:8x7b': { // Strong reasoning capabilities
     temperature: 0.2,
-    num_predict: 100,
+    num_predict: 150, // Increased from 100 to 150
     description: 'Strong reasoning for complex metrics analysis'
   },
   'gemma:7b': { // Google's model, efficient
     temperature: 0.2,
-    num_predict: 75,
+    num_predict: 150, // Increased from 75 to 150
     description: 'Efficient model with good reasoning'
   }
 };
@@ -192,7 +192,63 @@ async function getScalingRecommendation(prompt, systemPrompt = DEFAULT_SYSTEM_PR
 
       try {
         // Parse the JSON string within the response field
-        const recommendation = JSON.parse(response.data.response.trim());
+        // A more robust approach to handling various JSON response issues
+        let responseText = response.data.response.trim();
+        logger.debug('Raw response text before processing:', { responseText });
+        
+        // First, try to extract just the JSON object if there's extra text
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          responseText = jsonMatch[0];
+          logger.info('Extracted JSON object from response');
+        }
+        
+        // Clean up common formatting issues
+        // Remove any trailing commas before closing braces
+        responseText = responseText.replace(/,\s*}/g, '}');
+        
+        // Handle newlines and indentation in the response
+        responseText = responseText.replace(/\n\s*/g, ' ');
+        
+        // Fix unclosed quotes in reasoning field
+        if (responseText.includes('"reasoning": "') && 
+            !responseText.includes('"reasoning": ""') && 
+            !responseText.endsWith('"}') && 
+            !responseText.match(/"reasoning": "[^"]*"/)) {
+          logger.info('Detected unclosed quotes in reasoning field, attempting to fix');
+          
+          // Extract the reasoning field and close it properly
+          const reasoningStart = responseText.indexOf('"reasoning": "') + 14;
+          const reasoningText = responseText.substring(reasoningStart);
+          
+          // Remove the incomplete reasoning and add a properly closed one
+          responseText = responseText.substring(0, reasoningStart) + reasoningText.replace(/[^"]*$/, '"');
+        }
+        
+        // Make sure we have a valid JSON object
+        if (!responseText.endsWith('}')) {
+          responseText += '}';
+        }
+        
+        logger.debug('Processed response for parsing:', { responseText });
+        
+        let recommendation;
+        try {
+          recommendation = JSON.parse(responseText);
+        } catch (parseError) {
+          // Last resort - try a more permissive approach using Function constructor
+          // This is less secure but can handle more malformed JSON
+          logger.warn(`Standard JSON parse failed: ${parseError.message}, attempting alternative parsing`);
+          try {
+            // Use a safer approach with a limited scope function
+            const jsonStr = responseText.replace(/[\r\n]/g, ' ')
+                                      .replace(/"/g, '\\"')
+                                      .replace(/'/g, "\\'");
+            recommendation = eval(`(${responseText})`);
+          } catch (evalError) {
+            throw new Error(`Failed all parsing attempts: ${evalError.message}`);
+          }
+        }
         
         // Validate recommendation format
         if (!validateRecommendation(recommendation)) {

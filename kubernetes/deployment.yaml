@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-infrastructure-scaling
+  labels:
+    app: dynamic-infrastructure-scaling
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dynamic-infrastructure-scaling
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: dynamic-infrastructure-scaling
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: app
+        image: ${REGISTRY_URL}/dynamic-infrastructure-scaling:${IMAGE_TAG}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        # Azure credentials from Secret
+        - name: AZURE_TENANT_ID
+          valueFrom:
+            secretKeyRef:
+              name: azure-credentials
+              key: AZURE_TENANT_ID
+        - name: AZURE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: azure-credentials
+              key: AZURE_CLIENT_ID
+        - name: AZURE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: azure-credentials
+              key: AZURE_CLIENT_SECRET
+        - name: AZURE_SUBSCRIPTION_ID
+          valueFrom:
+            secretKeyRef:
+              name: azure-credentials
+              key: AZURE_SUBSCRIPTION_ID
+        # Azure resources from ConfigMap
+        - name: AZURE_RESOURCE_GROUP
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: AZURE_RESOURCE_GROUP
+        - name: AZURE_VMSS_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: AZURE_VMSS_NAME
+        # Ollama Configuration from ConfigMap
+        - name: OLLAMA_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: OLLAMA_API_URL
+        - name: OLLAMA_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: OLLAMA_MODEL
+        - name: OLLAMA_FALLBACK_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: OLLAMA_FALLBACK_MODEL
+        - name: SCALING_CONFIDENCE_THRESHOLD
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: SCALING_CONFIDENCE_THRESHOLD
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: app-data
+          mountPath: /app/data
+        - name: app-logs
+          mountPath: /app/logs
+      volumes:
+      - name: app-data
+        persistentVolumeClaim:
+          claimName: app-data-pvc
+      - name: app-logs
+        persistentVolumeClaim:
+          claimName: app-logs-pvc 
