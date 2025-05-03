@@ -1,5 +1,5 @@
 // Model service file
-const tf = require('@tensorflow/tfjs-node');
+const tf = require('@tensorflow/tfjs');
 const { getHistoricalMetrics } = require('./dataCollectionService');
 const { metricsCache } = require('../utils/cache');
 const logger = require('../utils/logger');
