@@ -40,9 +40,8 @@ export function AuthProvider({ children }) {
           const userData = await response.json()
           setUser(userData)
         } else {
-          // Token is invalid, remove it
-          localStorage.removeItem("authToken")
-          Cookies.remove("auth_token")
+          // Token is invalid, try to refresh it
+          await refreshToken()
         }
       } catch (err) {
         console.error("Auth check error:", err)
@@ -53,6 +52,59 @@ export function AuthProvider({ children }) {
 
     checkAuth()
   }, [])
+
+  // Refresh token
+  const refreshToken = async () => {
+    try {
+      const refreshToken = Cookies.get("refresh_token")
+      
+      if (!refreshToken) {
+        // No refresh token available, log user out
+        logout(false) // Silent logout (no API call)
+        return false
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ refreshToken }),
+        credentials: "include",
+      })
+      
+      if (response.ok) {
+        const { user, token, refreshToken: newRefreshToken } = await response.json()
+        
+        // Update tokens
+        localStorage.setItem("authToken", token)
+        localStorage.setItem("user", JSON.stringify(user))
+        
+        Cookies.set("auth_token", token, { 
+          expires: 7,
+          sameSite: "strict",
+          secure: process.env.NODE_ENV === "production"
+        })
+        
+        Cookies.set("refresh_token", newRefreshToken, { 
+          expires: 30, // 30 days
+          sameSite: "strict",
+          secure: process.env.NODE_ENV === "production"
+        })
+        
+        setUser(user)
+        return true
+      } else {
+        // Refresh failed, clear all auth data
+        logout(false) // Silent logout
+        return false
+      }
+    } catch (err) {
+      console.error("Token refresh error:", err)
+      logout(false) // Silent logout
+      return false
+    }
+  }
 
   // Login function
   const login = async (email, password) => {
@@ -74,7 +126,7 @@ export function AuthProvider({ children }) {
         throw new Error(errorData.message || "Invalid credentials")
       }
 
-      const { user, token } = await response.json()
+      const { user, token, refreshToken } = await response.json()
       
       // Store auth data in localStorage
       localStorage.setItem("authToken", token)
@@ -83,6 +135,12 @@ export function AuthProvider({ children }) {
       // Also set in cookies for server-side verification
       Cookies.set("auth_token", token, { 
         expires: 7, // 7 days
+        sameSite: "strict",
+        secure: process.env.NODE_ENV === "production"
+      })
+      
+      Cookies.set("refresh_token", refreshToken, { 
+        expires: 30, // 30 days
         sameSite: "strict",
         secure: process.env.NODE_ENV === "production"
       })
@@ -98,13 +156,13 @@ export function AuthProvider({ children }) {
   }
 
   // Logout function
-  const logout = async () => {
+  const logout = async (callApi = true) => {
     setIsLoading(true)
 
     try {
       const token = localStorage.getItem("authToken")
       
-      if (token) {
+      if (token && callApi) {
         // Call logout endpoint
         await fetch(`${API_BASE_URL}/auth/logout`, {
           method: "POST",
@@ -119,6 +177,7 @@ export function AuthProvider({ children }) {
       localStorage.removeItem("authToken")
       localStorage.removeItem("user")
       Cookies.remove("auth_token")
+      Cookies.remove("refresh_token")
 
       setUser(null)
       router.push("/login")
@@ -134,7 +193,8 @@ export function AuthProvider({ children }) {
     isLoading,
     error,
     login,
-    logout
+    logout,
+    refreshToken
   }
 
   return (

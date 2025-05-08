@@ -1,0 +1,10 @@
+{"level":"info","message":"Environment variable CURRENT_INSTANCES not set, using default: 2","timestamp":"2025-05-08T05:00:37.046Z"}
+{"level":"info","message":"Environment variable SCALING_METHOD not set, using default: azure-sdk","timestamp":"2025-05-08T05:00:37.048Z"}
+{"level":"info","message":"Environment variable TERRAFORM_DIR not set, using default: ./infrastructure/terraform","timestamp":"2025-05-08T05:00:37.048Z"}
+{"level":"info","message":"Environment variable MODEL_SAVE_PATH not set, using default: file://./models","timestamp":"2025-05-08T05:00:37.049Z"}
+{"level":"info","message":"Environment variable AZURE_LOCATION not set, using default: eastus","timestamp":"2025-05-08T05:00:37.049Z"}
+{"level":"warn","message":"OPENAI_API_KEY not set - insight features will not be available","timestamp":"2025-05-08T05:00:37.049Z"}
+{"level":"info","message":"Environment validation complete - all required variables present","timestamp":"2025-05-08T05:00:37.050Z"}
+{"level":"info","message":"Server running on port 3001","timestamp":"2025-05-08T05:00:37.053Z"}
+{"level":"info","message":"Initializing services...","timestamp":"2025-05-08T05:00:37.054Z"}
+{"error":{"code":"ENOTFOUND","hostname":"_mongodb._tcp.your-cluster.mongodb.net","syscall":"querySrv"},"level":"error","message":"MongoDB connection error: querySrv ENOTFOUND _mongodb._tcp.your-cluster.mongodb.net","timestamp":"2025-05-08T05:00:53.613Z"}

@@ -8,11 +8,13 @@ const compression = require('compression');
 const logger = require('./utils/logger');
 const config = require('./utils/config');
 const { errorHandler, requestLogger, rateLimit } = require('./utils/middleware');
+const db = require('./utils/db');
 
 // Only import services after config validation
 let monitoringService, dataCollectionService, modelService, infrastructureService;
 
 // Import API routes
+const authRoutes = require('./api/authRoutes');
 const predictionRoutes = require('./api/predictionRoutes');
 const insightsRoutes = require('./api/insightsRoutes');
 const infrastructureRoutes = require('./api/infrastructureRoutes');
@@ -56,6 +58,7 @@ try {
 }
 
 // Register API routes
+app.use('/api/auth', authRoutes);
 app.use('/api/predictions', predictionRoutes);
 app.use('/api/insights', insightsRoutes);
 app.use('/api/infrastructure', infrastructureRoutes);
@@ -73,6 +76,10 @@ app.use((req, res) => {
 async function initializeServices() {
   try {
     logger.info('Initializing services...');
+    
+    // Connect to MongoDB
+    await db.connectToDatabase();
+    logger.info('Connected to MongoDB');
     
     // Initialize metrics with resource group and VMSS name
     const metrics = require('./utils/metrics');
@@ -114,6 +121,12 @@ const server = app.listen(PORT, async () => {
 // Handle graceful shutdown
 function shutdown() {
   logger.info('Shutdown signal received, closing HTTP server...');
+  
+  // Disconnect from MongoDB
+  db.disconnectFromDatabase().catch(err => {
+    logger.error(`Error disconnecting from MongoDB: ${err.message}`);
+  });
+  
   server.close(() => {
     logger.info('HTTP server closed');
     process.exit(0);

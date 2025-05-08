@@ -42,3 +42,8 @@
 {"level":"info","message":"Using model llama3:8b for scaling recommendation (fallback: mistral:7b)","service":"azure-infrastructure-scaling","timestamp":"2025-04-26T07:24:00.515Z"}
 {"level":"info","message":"Sending request to Ollama API: http://localhost:11434/api/generate, Model: llama3:8b (Optimized model for cloud scaling decisions)","service":"azure-infrastructure-scaling","timestamp":"2025-04-26T07:24:00.517Z"}
 {"level":"info","message":"Received response from Ollama API","service":"azure-infrastructure-scaling","timestamp":"2025-04-26T07:24:10.624Z"}
+{"level":"info","message":"Connected to MongoDB","service":"azure-infrastructure-scaling","timestamp":"2025-05-05T13:14:16.630Z"}
+{"level":"info","message":"Disconnected from MongoDB","service":"azure-infrastructure-scaling","timestamp":"2025-05-05T13:14:16.790Z"}
+{"ADMIN_EMAIL":"admin@example.com","JWT_EXPIRES_IN":"24h","LOG_LEVEL":"info","MONGODB_URI":"mongodb+srv://username:password@your-cluster.mongodb.net/dynamic-scaling?retryWrites=true&w=majority","NODE_ENV":"production","PORT":"3001","REFRESH_TOKEN_EXPIRES_IN":"7d","level":"info","message":"Environment configuration:","service":"azure-infrastructure-scaling","timestamp":"2025-05-05T14:05:01.427Z"}
+{"level":"info","message":"Connecting to MongoDB...","service":"azure-infrastructure-scaling","timestamp":"2025-05-05T14:05:01.438Z"}
+{"error":{"code":"ENOTFOUND","hostname":"_mongodb._tcp.your-cluster.mongodb.net","syscall":"querySrv"},"level":"error","message":"MongoDB connection error: querySrv ENOTFOUND _mongodb._tcp.your-cluster.mongodb.net","service":"azure-infrastructure-scaling","timestamp":"2025-05-05T14:05:01.816Z"}
